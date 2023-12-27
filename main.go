@@ -1,14 +1,22 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/cors"
+	"github.com/gorkettsyan/rss_aggregator/internal/database"
 	"github.com/joho/godotenv"
+
+	_ "github.com/lib/pq"
 )
+
+type apiConfig struct {
+	DB *database.Queries
+}
 
 func main() {
 	err := godotenv.Load()
@@ -22,8 +30,24 @@ func main() {
 		log.Fatal("PORT is not found in the environment")
 	}
 
-	router := chi.NewRouter()
+	DB_URL := os.Getenv("DB_URL")
+	if PORT == "" {
+		log.Fatal("DB_URL is not found in the environment")
+	}
 
+	// Open a database connection
+	conn, err := sql.Open("postgres", DB_URL)
+	if err != nil {
+		log.Fatal("Failed to connect to database")
+	}
+
+	// Create api config
+	apiCfg := apiConfig{
+		DB: database.New(conn),
+	}
+
+	// Configure router
+	router := chi.NewRouter()
 	router.Use(cors.Handler(cors.Options{
 		// AllowedOrigins:   []string{"https://foo.com"}, // Use this to allow specific origin hosts
 		AllowedOrigins: []string{"https://*", "http://*"},
@@ -38,8 +62,10 @@ func main() {
 	v1Router := chi.NewRouter()
 	v1Router.Get("/healthz", handlerReadiness)
 	v1Router.Get("/err", handlerError)
+	v1Router.Post("/users", apiCfg.handlerCreateUser)
 	router.Mount("/v1", v1Router)
 
+	// Create an http server
 	srv := &http.Server{
 		Handler: router,
 		Addr:    ":" + PORT,
@@ -47,5 +73,6 @@ func main() {
 
 	log.Printf("Server starting on port: %v", PORT)
 
+	// Run server
 	srv.ListenAndServe()
 }
